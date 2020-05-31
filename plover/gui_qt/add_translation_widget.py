@@ -10,6 +10,7 @@ from plover.steno import normalize_steno, sort_steno_strokes
 from plover.engine import StartingStrokeState
 from plover.translation import escape_translation, unescape_translation
 from plover.formatting import RetroFormatter
+from plover.suggestions import StrokeDisplay
 
 from plover.gui_qt.add_translation_widget_ui import Ui_AddTranslationWidget
 from plover.gui_qt.i18n import get_gettext
@@ -35,6 +36,7 @@ class AddTranslationWidget(QWidget, Ui_AddTranslationWidget):
         self.on_config_changed(engine.config)
         engine.signal_connect('dictionaries_loaded', self.on_dictionaries_loaded)
         self.on_dictionaries_loaded(self._engine.dictionaries)
+        self.stroke_display = StrokeDisplay()
 
         self._special_fmt = (
             '<span style="' +
@@ -213,7 +215,8 @@ class AddTranslationWidget(QWidget, Ui_AddTranslationWidget):
 
     def _format_label(self, fmt, strokes, translation):
         if strokes:
-            strokes = ', '.join(self._special_fmt % html_escape('/'.join(s))
+            strokes = ', '.join(self._special_fmt % html_escape('/'
+                    .join([self.stroke_display.swap_numbers_for_letters(p) for p in s]))
                                 for s in sort_steno_strokes(strokes))
         if translation:
             translation = self._special_fmt % html_escape(escape_translation(translation))

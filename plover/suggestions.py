@@ -1,14 +1,39 @@
 import collections
+import re
 
 from plover.steno import sort_steno_strokes
-
+from plover import system
 
 Suggestion = collections.namedtuple('Suggestion', 'text steno_list')
+
+
+class StrokeDisplay:
+    def __init__(self):
+        self.number_map = {v.replace('-', ''): k.replace('-', '')
+                           for k, v in system.NUMBERS.items()}
+        self.re_digit_pattern = re.compile(r'\d')
+
+    def swap_numbers_for_letters(self, stroke):
+        if self.re_digit_pattern.search(stroke):
+            digits_swapped = '#'
+            for c in stroke:
+                if self.re_digit_pattern.search(c):
+                    digits_swapped += self.number_map[c]
+                else:
+                    digits_swapped += c
+            return digits_swapped
+        else:
+            return stroke
 
 
 class Suggestions:
     def __init__(self, dictionary):
         self.dictionary = dictionary
+        self.stroke_display = StrokeDisplay()
+
+    def number_transform(self, strokes_list):
+        return [[self.stroke_display.swap_numbers_for_letters(s) for s in sl]
+                for sl in strokes_list]
 
     def find(self, translation):
         suggestions = []
@@ -45,8 +70,8 @@ class Suggestions:
                 strokes_list = self.dictionary.reverse_lookup(modded_translation)
                 if not strokes_list:
                     continue
-                strokes_list = sort_steno_strokes(strokes_list)
+                strokes_list = self.number_transform(sort_steno_strokes(strokes_list))
                 suggestion = Suggestion(modded_translation, strokes_list)
                 suggestions.append(suggestion)
-
         return suggestions
+
