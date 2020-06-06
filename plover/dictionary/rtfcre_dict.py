@@ -24,26 +24,30 @@ from plover.formatting import ATOM_RE
 
 
 # A regular expression to capture an individual entry in the dictionary.
-DICT_ENTRY_PATTERN = re.compile(r'(?s)(?<!\\){\\\*\\cxs (?P<steno>[^}]+)}' + 
-                                r'(?P<translation>.*?)(?:(?<!\\)(?:\r\n|\n))*?'+
+DICT_ENTRY_PATTERN = re.compile(r'(?s)(?<!\\){\\\*\\cxs (?P<steno>[^}]+)}' +
+                                r'(?P<translation>.*?)' +
+                                # translation group ends on unescaped \cxs
                                 r'(?=(?:(?<!\\){\\\*\\cxs [^}]+})|' +
-                                r'(?:(?:(?<!\\)(?:\r\n|\n)\s*)*}\s*\Z))')
+                                # or when the file ends
+                                r'(?:}\s*\Z))')
+
 
 class TranslationConverter:
     """Convert an RTF/CRE translation into plover's internal format."""
-    
+
     def __init__(self, styles={}):
         self.styles = styles
-        
+
         def linenumber(f):
             return f[1].__code__.co_firstlineno
-        
+
         handler_funcs = inspect.getmembers(self, inspect.ismethod)
         handler_funcs.sort(key=linenumber)
         handlers = [self._make_re_handler(f.__doc__, f)
-                    for name, f in handler_funcs 
+                    for name, f in handler_funcs
                     if name.startswith('_re_handle_')]
         handlers.append(self._match_nested_command_group)
+
         def handler(s, pos):
             for handler in handlers:
                 result = handler(s, pos)
@@ -57,9 +61,10 @@ class TranslationConverter:
         # This poorly named variable indicates whether the current context is
         # one where commands can be inserted (True) or not (False).
         self._whitespace = True
-    
+
     def _make_re_handler(self, pattern, f):
         pattern = re.compile(pattern)
+
         def handler(s, pos):
             match = pattern.match(s, pos)
             if match:
@@ -72,42 +77,55 @@ class TranslationConverter:
     def _re_handle_escapedchar(self, m):
         r'\\([-\\{}])'
         return m.group(1)
-        
+
+    # a bit torn here.. '^' is legitimate plain text
+    # but in digitalCAT world it's non-breaking-space
+    # note, excluded literal ^ in the patterns for
+    # prefix, infix and suffix
+    def _re_handle_digitalcat_hardspace(self, m):
+        r'\^'
+        return '{^ ^}'
+
+    # to allow literal ^ in translations
+    def _re_handle_literal_caret(self, m):
+        r'\\\^'
+        return '^'
+
     def _re_handle_hardspace(self, m):
         r'\\~'
         return '{^ ^}'
-        
+
     def _re_handle_dash(self, m):
         r'\\_'
         return '-'
-        
+
     def _re_handle_escaped_newline(self, m):
         r'\\\r|\\\n'
         return '{#Return}{#Return}'
-        
+
     def _re_handle_infix(self, m):
-        r'\\cxds ([^{}\\\r\n]+)\\cxds ?'
+        r'\\cxds ([^\^{}\\]+)\\cxds ?'
         return '{^%s^}' % m.group(1)
-        
+
     def _re_handle_suffix(self, m):
-        r'\\cxds ([^{}\\\r\n ]+)'
+        r'\\cxds ([^\^{}\\ ]+)'
         return '{^%s}' % m.group(1)
 
     def _re_handle_prefix(self, m):
-        r'([^{}\\\r\n ]+)\\cxds ?'
+        r'([^\^{}\\ ]+)\\cxds ?'
         return '{%s^}' % m.group(1)
 
     def _re_handle_commands(self, m):
         r'(\\\*)?\\([a-z]+)(-?[0-9]+)? ?'
-        
+
         command = m.group(2)
         arg = m.group(3)
         if arg:
             arg = int(arg)
-        
+
         if command == 'cxds':
             return '{^}'
-        
+
         if command == 'cxfc':
             return '{-|}'
 
@@ -117,7 +135,7 @@ class TranslationConverter:
         if command == 'par':
             self.seen_par = True
             return '{#Return}{#Return}'
-            
+
         if command == 's':
             result = []
             if not self.seen_par:
@@ -132,7 +150,7 @@ class TranslationConverter:
 
     def _re_handle_simple_command_group(self, m):
         r'{(\\\*)?\\([a-z]+)(-?[0-9]+)?[ ]?([^{}]*)}'
-        
+
         ignore = bool(m.group(1))
         command = m.group(2)
         contents = m.group(4)
@@ -142,14 +160,14 @@ class TranslationConverter:
         if command == 'cxstit':
             # Plover doesn't support stitching.
             return self(contents)
-        
+
         if command == 'cxfing':
             prev = self._whitespace
             self._whitespace = False
             result = '{&' + contents + '}'
             self._whitespace = prev
             return result
-            
+
         if command == 'cxp':
             prev = self._whitespace
             self._whitespace = False
@@ -169,7 +187,7 @@ class TranslationConverter:
         
         if command == 'cxsvatdictflags' and 'N' in contents:
             return '{-|}'
-        
+
         # unrecognized commands
         if ignore:
             return ''
@@ -180,7 +198,7 @@ class TranslationConverter:
         r'({[^\\][^{}]*})'
         return m.group()
 
-    # caseCATalyst doesn't put punctuation in \cxp so we will treat any 
+    # caseCATalyst doesn't put punctuation in \cxp so we will treat any
     # isolated punctuation at the beginning of the translation as special.
     def _re_handle_punctuation(self, m):
         r'^([.?!:;,])(?=\s|$)'
@@ -191,7 +209,7 @@ class TranslationConverter:
         return result
 
     def _re_handle_text(self, m):
-        r'[^{}\\\r\n]+'
+        r'[^{}\\]+'
         text = m.group()
         if self._whitespace:
             text = self._multiple_whitespace_pattern.sub(r'{^\1^}', text)
@@ -231,7 +249,7 @@ class TranslationConverter:
 
         ignore = bool(command_match.group(1))
         command = command_match.group(2)
-        
+
         if command == 'cxconf':
             pos = command_match.end()
             last = ''
@@ -253,7 +271,7 @@ class TranslationConverter:
                     continue
                 return None
             return (endpos + 1, self(last))
-            
+
         if ignore:
             return (endpos + 1, '')
         else:
@@ -261,7 +279,7 @@ class TranslationConverter:
 
     def __call__(self, s):
         self.seen_par = False
-        
+
         pos = 0
         tokens = []
         handler = self._handler
@@ -277,18 +295,22 @@ class TranslationConverter:
             tokens.append(token)
         return ''.join(tokens)
 
+
 STYLESHEET_RE = re.compile(r'(?s){\\s([0-9]+).*?((?:\b\w+\b\s*)+);}')
+
 
 def load_stylesheet(s):
     """Returns a dictionary mapping a number to a style name."""
     return {int(k): v for k, v in STYLESHEET_RE.findall(s)}
 
+
 HEADER = ("{\\rtf1\\ansi{\\*\\cxrev100}\\cxdict{\\*\\cxsystem Plover}" +
           "{\\stylesheet{\\s0 Normal;}}\r\n")
 
+
 def format_translation(t):
     t = ' '.join([x.strip() for x in ATOM_RE.findall(t) if x.strip()])
-    
+
     t = re.sub(r'{\.}', r'{\\cxp. }', t)
     t = re.sub(r'{!}', r'{\\cxp! }', t)
     t = re.sub(r'{\?}', r'{\\cxp? }', t)
@@ -310,11 +332,21 @@ def format_translation(t):
     return t
 
 
+# digitalCAT likes to keep lines a little on the short side
+# so if you have a really long sequence of strokes (or translation!)
+# the RTF/CRE dictionary might have newlines anywhere
+# including in the strokes themselves, the translation or any random command
+# note, this pattern does not include whitespace..
+# which *is* meaningful in the core RTF standard
+UNESCAPED_NEWLINE_PATTERN = re.compile(r'(?:(?<!\\)(?:\r\n|\n))')
+
+
 class RtfDictionary(StenoDictionary):
 
     def _load(self, filename):
         with open(filename, 'rb') as fp:
-            s = fp.read().decode('cp1252')
+            s = UNESCAPED_NEWLINE_PATTERN.sub('', fp.read().decode('cp1252'))
+
         def parse():
             styles = load_stylesheet(s)
             converter = TranslationConverter(styles)
