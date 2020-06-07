@@ -29,11 +29,47 @@ RTF_LOAD_TESTS = (
     ''',
 
     # One translation on multiple lines.
-    lambda: pytest.param('''
+    lambda: '''
     {\\*\\cxs SP}\r\ntranslation
 
     'SP': 'translation'
-    ''', marks=pytest.mark.xfail),
+    ''',
+
+    # Stroke on multiple lines
+    lambda: '''
+    {\\*\\cxs S\nP}translation
+
+    'SP': 'translation'
+    ''',
+
+    # Strokes and translations on multiple lines
+    lambda: '''
+    {\\*\\cxs S\r\nP}o\r\nn\r\ne\r\n{\\*\\cxs S\r\nPT}t\r\nw\r\no
+
+    'SP': 'one',
+    'SPT': 'two'
+    ''',
+
+    # One translation followed by a command next line
+    lambda: '''
+    {\\*\\cxs SP}translation\r\n{\\*\\cxsvatdictentrydate\\yr2020\\mo6\\da4}
+
+    'SP': 'translation'
+    ''',
+
+    # One translation followed by a partial command
+    lambda: '''
+    {\\*\\cxs SP}word\r\n{\\*\\cxsvatdictentrydate\r\n\\yr2020\\mo6\\da4}
+
+    'SP': 'word'
+    ''',
+
+    # One translation followed by a command with a newline after {
+    lambda: '''
+    {\\*\\cxs SP}word{\r\n\\*\\cxsvatdictentrydate\r\n\\yr2020\\mo6\\da4}
+
+    'SP': 'word'
+    ''',
 
     # Multiple translations no newlines.
     lambda: r'''
@@ -154,6 +190,9 @@ RTF_LOAD_TESTS = (
     # Stenovations extensions...
     lambda: (r'{\*\cxsvatdictflags N}', '{-|}'),
     lambda: (r'{\*\cxsvatdictflags LN1}', '{-|}'),
+    lambda: (r'\cxds .^', '{^.}{^ ^}'),
+    lambda: (r'\cxds .\^', '{^.}^'),
+    lambda: (r'\^', '^'),
     # caseCATalyst declares new styles without a preceding \par so we treat
     # it as an implicit par.
     lambda: (r'\s1', '{#Return}{#Return}'),
@@ -202,12 +241,13 @@ RTF_LOAD_TESTS = (
     lambda: (r'{\*\nonexistent {\cxp .}}', ''),
 )
 
+
 @parametrize(RTF_LOAD_TESTS, arity=1)
 def test_rtf_load(test_case):
     if isinstance(test_case, tuple):
         # Translation conversion test.
         rtf_entries = r'{\*\cxs S}' + test_case[0]
-        dict_entries = { normalize_steno('S'): test_case[1] }
+        dict_entries = {normalize_steno('S'): test_case[1]}
     else:
         rtf_entries, dict_entries = test_case.rsplit('\n\n', 1)
         dict_entries = {
@@ -238,7 +278,6 @@ def test_rtf_load(test_case):
         assert dict(d.items()) == dict_entries
 
 
-
 @parametrize((
     lambda: ('', ''),
     lambda: ('{^in^}', r'\cxds in\cxds '),
@@ -252,10 +291,11 @@ def test_format_translation(before, expected):
 
 
 @parametrize((
-    lambda: ({'S/T': '{pre^}'},
-     b'{\\rtf1\\ansi{\\*\\cxrev100}\\cxdict{\\*\\cxsystem Plover}'
-     b'{\\stylesheet{\\s0 Normal;}}\r\n'
-     b'{\\*\\cxs S///T}pre\\cxds \r\n}\r\n'
+    lambda: (
+        {'S/T': '{pre^}'},
+        b'{\\rtf1\\ansi{\\*\\cxrev100}\\cxdict{\\*\\cxsystem Plover}'
+        b'{\\stylesheet{\\s0 Normal;}}\r\n'
+        b'{\\*\\cxs S///T}pre\\cxds \r\n}\r\n'
     ),
 ))
 def test_save_dictionary(contents, expected):
