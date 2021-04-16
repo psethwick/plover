@@ -19,9 +19,12 @@ class Command(setuptools.Command):
         self.run_command('build_ext')
 
     @contextlib.contextmanager
-    def project_on_sys_path(self):
-        self.build_in_place()
+    def project_on_sys_path(self, build=True):
         ei_cmd = self.get_finalized_command("egg_info")
+        if build:
+            self.build_in_place()
+        else:
+            ei_cmd.run()
         old_path = sys.path[:]
         old_modules = sys.modules.copy()
         try:
@@ -53,6 +56,7 @@ class Test(Command):
     command_consumes_arguments = True
     user_options = []
     test_dir = 'test'
+    build_before = True
 
     def initialize_options(self):
         self.args = []
@@ -61,7 +65,7 @@ class Test(Command):
         pass
 
     def run(self):
-        with self.project_on_sys_path():
+        with self.project_on_sys_path(build=self.build_before):
             self.run_tests()
 
     def run_tests(self):
@@ -90,6 +94,37 @@ class Test(Command):
 
 # }}}
 
+# i18n support. {{{
+
+def babel_options(package, resource_dir=None):
+    if resource_dir is None:
+        localedir = '%s/messages' % package
+    else:
+        localedir = '%s/%s' % (package, resource_dir)
+    template = '%s/%s.pot' % (localedir, package)
+    return {
+        'compile_catalog': {
+            'domain': package,
+            'directory': localedir,
+        },
+        'extract_messages': {
+            'add_comments': ['i18n:'],
+            'output_file': template,
+            'strip_comments': True,
+        },
+        'init_catalog': {
+            'domain': package,
+            'input_file': template,
+            'output_dir': localedir,
+        },
+        'update_catalog': {
+            'domain': package,
+            'output_dir': localedir,
+        }
+    }
+
+# }}}
+
 # UI generation. {{{
 
 class BuildUi(Command):
@@ -102,7 +137,6 @@ class BuildUi(Command):
 
     hooks = '''
     plover_build_utils.pyqt:fix_icons
-    plover_build_utils.pyqt:gettext
     plover_build_utils.pyqt:no_autoconnection
     '''.split()
 
@@ -147,6 +181,12 @@ class BuildUi(Command):
 
     def run(self):
         self.run_command('egg_info')
+        std_hook_prefix = __package__ + '.pyqt:'
+        hooks_info = [
+            h[len(std_hook_prefix):] if h.startswith(std_hook_prefix) else h
+            for h in self.hooks
+        ]
+        log.info('generating ui (hooks: %s)', ', '.join(hooks_info))
         ei_cmd = self.get_finalized_command('egg_info')
         for src in ei_cmd.filelist.files:
             if src.endswith('.qrc'):

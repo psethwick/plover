@@ -19,7 +19,7 @@ from plover.registry import registry
 from plover.resource import resource_filename
 
 from plover.gui_qt.log_qt import NotificationHandler
-from plover.gui_qt.main_window_ui import Ui_MainWindow
+from plover.gui_qt.main_window_ui import _, Ui_MainWindow
 from plover.gui_qt.config_window import ConfigWindow
 from plover.gui_qt.about_dialog import AboutDialog
 from plover.gui_qt.trayicon import TrayIcon
@@ -51,10 +51,14 @@ class MainWindow(QMainWindow, Ui_MainWindow, WindowState):
         edit_menu.addSeparator()
         edit_menu.addMenu(self.dictionaries.menu_AddDictionaries)
         edit_menu.addAction(self.dictionaries.action_EditDictionaries)
+        edit_menu.addMenu(self.dictionaries.menu_SaveDictionaries)
         edit_menu.addAction(self.dictionaries.action_RemoveDictionaries)
         edit_menu.addSeparator()
         edit_menu.addAction(self.dictionaries.action_MoveDictionariesUp)
         edit_menu.addAction(self.dictionaries.action_MoveDictionariesDown)
+        self.dictionaries.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.dictionaries.customContextMenuRequested.connect(
+            lambda p: edit_menu.exec_(self.dictionaries.mapToGlobal(p)))
         # Tray icon.
         self._trayicon = TrayIcon()
         self._trayicon.enable()
@@ -123,7 +127,7 @@ class MainWindow(QMainWindow, Ui_MainWindow, WindowState):
         engine.signal_connect('config_changed', self.on_config_changed)
         engine.signal_connect('machine_state_changed',
             lambda machine, state:
-            self.machine_state.setText(_(state.capitalize()))
+            self.machine_state.setText(state.capitalize())
         )
         self.restore_state()
         # Commands.
@@ -132,6 +136,8 @@ class MainWindow(QMainWindow, Ui_MainWindow, WindowState):
         engine.signal_connect('configure', partial(self._configure, manage_windows=True))
         engine.signal_connect('lookup', partial(self._activate_dialog, 'lookup',
                                                 manage_windows=True))
+        engine.signal_connect('suggestions', partial(self._activate_dialog, 'suggestions',
+                                                     manage_windows=True))
         # Load the configuration (but do not start the engine yet).
         if not engine.load_config():
             self.on_configure()
